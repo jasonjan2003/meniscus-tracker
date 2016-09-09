@@ -1,4 +1,5 @@
 # meniscus-tracker
+![alt text](160720_10s_15ug_8000_withscale.jpg?raw=true "Sample Image")
 
 A MATLAB program to track menisci for the UW-Madison FESA Lab.
 

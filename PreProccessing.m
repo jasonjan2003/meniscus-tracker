@@ -1,7 +1,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Preproccessing of images prior to Edge Detection %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function im = PreProccessing( p, crop, contrastLimits);
+function im = PreProccessing( p, crop, contrastLimits, binaryIm)
 
 % Detect number of input arguments
 if( nargin > 0)
@@ -13,14 +13,17 @@ if( nargin > 0)
 else
     crop = true;
 end;
-
+rmBkg = false;
 switch nargin
     case 1
         crop = true;
     case 2
         contrastLimits = [0.25, 0.75];
     case 3
-        % nothing here yet
+        binaryIm = false;
+        rmBkg = false;
+    case 4
+        rmBkg = binaryIm;
     otherwise
         % Directory where to find the data
         dir = uigetdir('.');
@@ -42,6 +45,7 @@ switch nargin
         
         %fields
         contrastLimits = [0.25 0.75];
+        binaryIm = false;
         % path to file
         p = [dir baseName num2str(index,'%04d') '.tiff'];
         
@@ -54,7 +58,6 @@ if( ndims(im) == 3)
     im = rgb2gray(im);
 end;
 im = imcomplement( im);
-
 % crop
 if( crop)
     im = imcrop(im);
@@ -63,7 +66,11 @@ end;
 % filter image noise
 %im = wiener2(im,[5 5]);
 
-
+% remove background
+if( rmBkg )
+    im = im - imopen(im,strel('disk',30));
+end;
+    
 %Adjust contrast
 im = imadjust(im,stretchlim(im, contrastLimits),[]);
 
@@ -71,5 +78,11 @@ im = imadjust(im,stretchlim(im, contrastLimits),[]);
 %im = wiener2(im,[25 25]);
 im = medfilt2(im, [10,10]);
 
+% binarize and fill holes
+if( binaryIm == true)
+    im = imbinarize(im);
+    im = imfill(im,'holes');
+end;
+
 % clip border
-im = im(26:end-25, 26:end-25);
+%im = im(26:end-25, 26:end-25);

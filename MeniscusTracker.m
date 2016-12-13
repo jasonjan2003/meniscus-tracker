@@ -22,7 +22,7 @@ function varargout = MeniscusTracker(varargin)
 
 % Edit the above text to modify the response to help MeniscusTracker
 
-% Last Modified by GUIDE v2.5 09-Sep-2016 11:00:07
+% Last Modified by GUIDE v2.5 25-Oct-2016 12:14:31
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -395,11 +395,21 @@ resetUI( handles);
 if nargin == 1    
 % generate new image
     im = readIm( handles, handles.curr, true);
-    im = PreProccessing( im, false, lim);
+    imBinary = PreProccessing( im, false, lim, true);
+    im = PreProccessing( im, false, lim, false);
+    axes( handles.axes1);
+    %imshow( im);
+    ratio = handles.splitScreenSlider.Value;
+    halfCombined = ones(size(im));
+    halfCombined(:,1:floor(size(im,2)*ratio)) = im(:,1:floor(size(im,2)*ratio));
+    halfCombined(:,floor(size(im,2)*ratio)+1:end) = +imBinary(:,floor(size(im,2)*ratio)+1:end) .* 255;
+    halfCombined = uint8(halfCombined);
+    imshow( halfCombined);
+else
+    axes( handles.axes1);
+    imshow(im);
 end;
 
-axes( handles.axes1);
-imshow( im);
 
 axes( handles.histo);
 his = histogram( im);
@@ -436,23 +446,27 @@ smoothingRange = str2double(handles.smoothingRange.String) * 0.01;
 side = (1-smoothingRange)/2 * cropWidth;
 side = round(side);
 topIndex = -1;
+% MODE3:
+im = readIm( handles, 1, true);
+topIndex = floor(size(im,2)/2);
 
 %%
 % Process every image
 s = str2double(handles.seqEnd.String) - str2double(handles.seqStart.String) + 1;
 contrastLim = handles.contrastLim;
 imagesEdges = cell(1, s);
-maxEdges = zeros(2, s);
+maxEdgesTop = zeros(1, s);
+maxEdgesBottom = zeros(1, s);
 % waitbar
-wBar = waitbar(0,'Processing Images...', 'Name', 'Processing Images...','CreateCancelBtn', 'setappdata(gcbf,''canceling'',1)');
-setappdata(wBar,'canceling',0)
-
-for i=1:s;
+%wBar = waitbar(0,'Processing Images...', 'Name', 'Processing Images...','CreateCancelBtn', 'setappdata(gcbf,''canceling'',1)');
+%setappdata(wBar,'canceling',0)
+d = dialog('Name', 'Processing PARFOR loop...');
+parfor i=1:s
     
     % stop process if the cancel button is triggered
-    if getappdata(wBar,'canceling')
-        break;
-    end
+    %if getappdata(wBar,'canceling')
+    %    break;
+    %end
     
     % corresponding i
     seq = i + str2double(handles.seqStart.String) - 1;
@@ -460,32 +474,44 @@ for i=1:s;
     % read, preproccess, edgeSearch
     im = readIm( handles, seq, true);
     imWoContrast = PreProccessing( im, false, [0.1,0.99]);
+    imBinary = PreProccessing( im, false, contrastLim, handles.binarize.Value);
     im = PreProccessing( im, false, contrastLim);
-    imagesEdges{1,i} = EdgeSearch( im, imWoContrast , str2double( handles.smoothingRange.String));
+    imagesEdges{1,i} = EdgeSearch( im, imWoContrast , str2double( handles.smoothingRange.String), imBinary);
     
     % MODE1: find max of each curve
     %maxEdges(1,i) = min(imagesEdges{1,i}(1,:));
     %maxEdges(2,i) = min(imagesEdges{1,i}(2,:));
     
     % MODE2: track by first image max
-    if topIndex == -1
-        [~,topIndex] = min(imagesEdges{1,i}(1,side:end-side));
-    end;
-    maxEdges(1,i) = imagesEdges{1,i}(1,topIndex);
-    maxEdges(2,i) = imagesEdges{1,i}(2,topIndex);
+    %if topIndex == -1
+    %    [~,topIndex] = min(imagesEdges{1,i}(1,side:end-side));
+    %end;
+    %maxEdges(1,i) = imagesEdges{1,i}(1,topIndex);
+    %maxEdges(2,i) = imagesEdges{1,i}(2,topIndex);
     
+    % MODE3: use midpoint of image
+    topEdges = imagesEdges{1,i}(1,floor(size(im,2)/2));
+    buttomEdges = imagesEdges{1,i}(2,floor(size(im,2)/2));
+    
+    maxEdgesTop(i) = topEdges;
+    maxEdgesBottom(i) = buttomEdges;
     % calculate progress and update waitbar
-    waitbar(i/s, wBar, [num2str(i) ' images processed...']);
+    %waitbar(i/s, wBar, [num2str(i) ' images processed...']);
 end;
 
+% combine max edges
+maxEdges = [maxEdgesTop; maxEdgesBottom];
+
 % Delete wbar
-delete(wBar);
+%delete(wBar);
+delete(d);
 
 %%
 % Update guidata
 handles.imagesEdges = imagesEdges;
 handles.maxEdges = maxEdges;
 handles.topIndex = topIndex;
+handles.column.String = num2str(topIndex);
 guidata( hObject, handles);
 
 %%
@@ -566,8 +592,9 @@ curr = handles.curr;
 
 im = readIm( handles, curr, true);
 imWoContrast = PreProccessing( im, false, [0.1,0.99]);
+imBinary = PreProccessing( im, false, handles.contrastLim, handles.binarize.Value);
 im = PreProccessing( im, false, handles.contrastLim);
-imEdges = EdgeSearch( im, imWoContrast, str2double( handles.smoothingRange.String));
+imEdges = EdgeSearch( im, imWoContrast, str2double( handles.smoothingRange.String), imBinary);
 
 overlayEdge( handles, imEdges);
 delete( wBar);
@@ -715,6 +742,7 @@ topIndex = handles.topIndex;
 liftRate = handles.liftRate.String;
 pixelSize = handles.pixelSize.String;
 fps = handles.fps.String;
+column = handles.column.String;
 
 if iscell(dir)
     name = [dir{1} basename 'imagesEdges'];
@@ -722,7 +750,7 @@ else
     name = [dir basename 'imagesEdges'];
 end;
 
-uisave( {'imagesEdges', 'crop', 'seqStart', 'seqEnd', 'dir', 'basename', 'ext', 'contrastLim', 'smoothingRange', 'topIndex','maxEdges', 'liftRate', 'pixelSize', 'fps'}, ...
+uisave( {'imagesEdges', 'crop', 'seqStart', 'seqEnd', 'dir', 'basename', 'ext', 'contrastLim', 'smoothingRange', 'topIndex','maxEdges', 'liftRate', 'pixelSize', 'fps', 'column'}, ...
             name);
 
 
@@ -825,9 +853,11 @@ function replot_Callback(hObject, eventdata, handles)
 % hObject    handle to replot (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-if (size(handles.imagesEdges) < 1 & ...
-        size(handles.liftRate.String)<1 & ...
-        size(handles.fps.String)<1)
+if (size(handles.imagesEdges) < 1)
+    return;
+end;
+if (isempty(handles.liftRate.String) && ...
+        isempty(handles.fps.String))
     return;
 end;
 
@@ -835,19 +865,17 @@ if( size(handles.pixelSize.String, 2) < 1)
     measurePixelSize( hObject, handles);
 end;
 
-topIndex = handles.topIndex;
-maxEdges = handles.maxEdges;
+topIndex = str2double(handles.column.String);
+[maxEdgesTop, maxEdgesBottom] = findColumnEdges( handles.imagesEdges, topIndex );
+maxEdges = [maxEdgesTop; maxEdgesBottom];
 numFrames = size( maxEdges, 2);
 fps = str2double(handles.fps.String);
 pixelSize = str2double( handles.pixelSize.String);
 liftRate = str2double( handles.liftRate.String);
-x = (0:numFrames-1)/fps;
+x = (1:numFrames)/fps;
 maxEdges = maxEdges .* pixelSize;
 maxEdges(1,:) = maxEdges(1,:) + liftRate .* x;
 maxEdges(2,:) = maxEdges(2,:) + liftRate .* x;
-inter = max( maxEdges(2,:));
-%maxEdges(1,:) = maxEdges(1,:) - inter;
-%maxEdges(2,:) = maxEdges(2,:) - inter;
 
 axes( handles.yTimeResult);
 cla;
@@ -865,7 +893,19 @@ handles.yTimeResult.XLabel.String = 'Time[s]';
 handles.yTimeResult.Title.String =  ['Menisci position at column ' num2str( topIndex) ' [um] vs. Time [s]'] ;
 handles.yTimeResult.Parent.CurrentAxes.YDir = 'reverse';
 
-
+function [topEdge, buttomEdge] = findColumnEdges( imagesEdges, column )
+    
+    % set the size of arrays
+    topEdge = zeros( 1, size(imagesEdges,2) );
+    buttomEdge = topEdge;
+    
+    
+    parfor i=1:size(imagesEdges,2)
+        topEdge(i) = imagesEdges{i}(1, column)
+        buttomEdge(i) = imagesEdges{i}(2, column)
+    end;
+    
+return;
 
 function fps_Callback(hObject, eventdata, handles)
 % hObject    handle to fps (see GCBO)
@@ -934,3 +974,57 @@ saveas( f, [fullfile(b,a) '.fig'], 'fig');
 saveas( f, [fullfile(b,a) '.tiff'], 'tiffn');
 
 delete(f);
+
+
+% --- Executes on button press in binarize.
+function binarize_Callback(hObject, eventdata, handles)
+% hObject    handle to binarize (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of binarize
+
+
+% --- Executes on slider movement.
+function splitScreenSlider_Callback(hObject, eventdata, handles)
+% hObject    handle to splitScreenSlider (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+updateHisto( handles );
+
+% --- Executes during object creation, after setting all properties.
+function splitScreenSlider_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to splitScreenSlider (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+
+
+
+function column_Callback(hObject, eventdata, handles)
+% hObject    handle to column (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of column as text
+%        str2double(get(hObject,'String')) returns contents of column as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function column_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to column (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end

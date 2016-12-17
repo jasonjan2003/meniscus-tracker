@@ -1,5 +1,15 @@
 function edges = EdgeSearch( im, imWoContrast, smoothRange, imBinary)
 
+
+%DEFINES the assumed minimal pixel distance between the two lines.
+threshold_margin = 50;
+%DEFINES the line smoothing thresholds
+TOP_SMOOTHING_THRESHOLD = 0.8;
+BOTTOM_SMOOTHING_THRESHOLD = 0.8;
+%DEFINES the fraction below the topline in which the bottom curve will be considered
+BOTTOM_SEARCH_FRACTION = 2/3;
+
+
 if( nargin == 2)
     smoothRange = 0.8;
 else
@@ -35,7 +45,7 @@ firstDiff = double(firstDiff);
 [firstDiffMax, firstDiffMaxIndex] = max( firstDiff);
 
 % smooth out firstDiff max() data
- firstDiffMaxIndexSmooth = smooth(firstDiffMaxIndex', 0.8, 'rloess')';
+ firstDiffMaxIndexSmooth = smooth(firstDiffMaxIndex', TOP_SMOOTHING_THRESHOLD, 'rloess')';
 %firstDiffMaxIndexSmooth = firstDiffMaxIndex;
 
 % define `top` for readability
@@ -45,7 +55,7 @@ topLineIndex = firstDiffMaxIndexSmooth;
 % blacken pixels above top line
 if( binarize)
     boundaryMatrix = (1:size(imD,1))'*ones(1,size(imD,2));
-    boundaryMatrix(boundaryMatrix<firstDiffMaxIndexSmooth) = 0;
+    boundaryMatrix(boundaryMatrix<( ones((1:size(imD,1),1))*firstDiffMaxIndexSmooth ) = 0;
     imBinary = imBinary .* boundaryMatrix;
 end;
 
@@ -61,11 +71,11 @@ bottomLineIndex = zeros(1,size(im, 2));
     % Alt1: first occurence of lowest point
     if( ~binarize)
         
-        [~, maxImIndex] = max(imD(colTopPeakIndex:round(colTopPeakIndex+(end-colTopPeakIndex)*2/3),i));
+        [~, maxImIndex] = max(imD(colTopPeakIndex:round(colTopPeakIndex+(end-colTopPeakIndex)*BOTTOM_SEARCH_FRACTION),i));
         if maxImIndex > 40
             maxImIndex = 35;
         elseif maxImIndex < 15
-            maxImIndex = 15;  
+            maxImIndex = 15;
         end;
         maxImIndex = floor(maxImIndex + colTopPeakIndex)+0;
         pksIndex = find( imD(maxImIndex:end,i)' <= 130, 1 );
@@ -76,7 +86,6 @@ bottomLineIndex = zeros(1,size(im, 2));
     % Alt2: using binary, first black pixel below colTopPeakIndex +
     % threshold margin
     else
-        threshold_margin = 50;
         maxImIndex = colTopPeakIndex;
         [~,pksIndex] = find( imBinary(colTopPeakIndex+threshold_margin:end,i)' == 0, 1);
     end
@@ -99,7 +108,7 @@ bottomLineIndex = zeros(1,size(im, 2));
     %end;
     
     if( ~binarize )
-        if( pksIndex > 2/3 * subsetWidth)
+        if( pksIndex > BOTTOM_SEARCH_FRACTION * subsetWidth)
             pksIndex = colTopPeakIndex;
         else
             pksIndex = pksIndex + maxImIndex;
@@ -132,12 +141,12 @@ end;
 s = size(bottomLineIndex, 2);
 if( smoothRange ~= 1)
     sides = round((0.5 - smoothRange / 2)*s);
-    bottomLineIndexSmoothPartial = smooth(bottomLineIndex( 1, sides:s-sides )', 0.8, 'rloess');
+    bottomLineIndexSmoothPartial = smooth(bottomLineIndex( 1, sides:s-sides )', BOTTOM_SMOOTHING_THRESHOLD, 'rloess');
     %bottomLineIndexSmoothPartial = bottomLineIndex( 1, sides:s-sides );
     bottomLineIndexSmooth = bottomLineIndex;
     bottomLineIndexSmooth( 1, sides:s-sides) = bottomLineIndexSmoothPartial;
 else
-    bottomLineIndexSmooth = smooth(bottomLineIndex', 0.8, 'rloess')';
+    bottomLineIndexSmooth = smooth(bottomLineIndex', BOTTOM_SMOOTHING_THRESHOLD, 'rloess')';
 end;
 
 edges = [topLineIndex; bottomLineIndexSmooth];
